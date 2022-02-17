@@ -402,7 +402,7 @@ watchEffect(() => {
             }
 
             // Return the fit count
-            return fit_count
+            if(number_of_modules > 1) return fit_count
         }
         else {
             // Find max fit count
