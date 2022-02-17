@@ -379,6 +379,7 @@ watchEffect(() => {
         
     const process = (process_candidate_list:candidate[], ret:results, at:number, weights:number[], memory:{max_fit_count:number, final_weights:number[][]}) => {
         const number_of_modules = process_list.value[0].modules.length
+        let fit_count_to_return:number = 0
 
         // Get the remaining weight
         const remaining_weight = 100 - weights.reduce((pv, cv) => pv + cv, 0)
@@ -401,8 +402,7 @@ watchEffect(() => {
                 memory.final_weights = [...memory.final_weights, all_weights]
             }
 
-            // Return the fit count
-            if(number_of_modules > 1) return fit_count
+            fit_count_to_return = fit_count
         }
         else {
             // Find max fit count
@@ -433,53 +433,56 @@ watchEffect(() => {
                 while(target_fit_weight + i >= 0 && target_fit_weight + i <= 100 && target_fit_weight + i <= remaining_weight && (mem[target_fit_weight + i] ?? (mem[target_fit_weight + i] = process(process_candidate_list, ret, at + 1, [...weights, target_fit_weight + i], memory))) >= memory.max_fit_count) i++
             }
 
-            // Final Processing
-            if(at == 1){
-                // Build out candidate data
-                ret.candidates = [...candidate_list.value].map(candidate => {
-                    const c:result_candidate = {
-                        id: candidate.id,
-                        name: candidate.candidate,
-                        system_rec: 'RFR',
-                        client_rec: candidate.client_rec,
-                        score: 0,
-                        scores: candidate.scores,
-                        pass_expectation: 0,
-                        passed_karat: candidate.passed_karat
-                    }
-                    return c
-                })
-
-                let best_score = 0
-                for(const all_weights of memory.final_weights){
-                    // Adjust score
-                    ret.candidates.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
-                    process_candidate_list.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
-                    
-                    // Get DNP bar
-                    const first_pass = find_first_candidate(true, process_candidate_list)
-                    const dnp = first_pass.prev_score == -1 ? -1 : (first_pass.prev_score + first_pass.score) / 2
-                    
-                    // Get ITNR bar
-                    const first_decline = find_first_candidate(false, process_candidate_list)
-                    const itnr = first_decline.prev_score == 101 ? -1 : (first_decline.prev_score + first_decline.score) / 2
-
-                    // Get pass/decline fit score
-                    set_pass_expectations(ret.candidates)
-                    const pass_score = ret.candidates.reduce((pv, cv) => pv + Math.pow(cv.pass_expectation - (cv.passed_karat ? 0 : 100), 2), 0)
-
-                    if(pass_score > best_score){
-                        best_score = pass_score
-                        ret.dnp = dnp
-                        ret.itnr = itnr
-                        ret.weights = all_weights
-                    }
-                }
-
-                results.value = ret
-            }
-            return max_fit_count
+            fit_count_to_return = max_fit_count
         }
+
+        // Final Processing
+        if(at == 1 || number_of_modules == 1){
+            // Build out candidate data
+            ret.candidates = [...candidate_list.value].map(candidate => {
+                const c:result_candidate = {
+                    id: candidate.id,
+                    name: candidate.candidate,
+                    system_rec: 'RFR',
+                    client_rec: candidate.client_rec,
+                    score: 0,
+                    scores: candidate.scores,
+                    pass_expectation: 0,
+                    passed_karat: candidate.passed_karat
+                }
+                return c
+            })
+
+            let best_score = 0
+            for(const all_weights of memory.final_weights){
+                // Adjust score
+                ret.candidates.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
+                process_candidate_list.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
+                
+                // Get DNP bar
+                const first_pass = find_first_candidate(true, process_candidate_list)
+                const dnp = first_pass.prev_score == -1 ? -1 : (first_pass.prev_score + first_pass.score) / 2
+                
+                // Get ITNR bar
+                const first_decline = find_first_candidate(false, process_candidate_list)
+                const itnr = first_decline.prev_score == 101 ? -1 : (first_decline.prev_score + first_decline.score) / 2
+
+                // Get pass/decline fit score
+                set_pass_expectations(ret.candidates)
+                const pass_score = ret.candidates.reduce((pv, cv) => pv + Math.pow(cv.pass_expectation - (cv.passed_karat ? 0 : 100), 2), 0)
+
+                if(pass_score > best_score){
+                    best_score = pass_score
+                    ret.dnp = dnp
+                    ret.itnr = itnr
+                    ret.weights = all_weights
+                }
+            }
+
+            results.value = ret
+        }
+        
+        return fit_count_to_return
     }
 
     // watches: ignore
