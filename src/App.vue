@@ -499,11 +499,11 @@ watchEffect(() => {
 
         // Get DNP bar
         const first_pass = find_first_candidate(true, process_candidates)
-        const dnp = first_pass.prev_score == -1 ? -1 : (first_pass.prev_score + first_pass.score) / 2
+        const dnp = first_pass.prev_score == -1 ? 0 : (first_pass.prev_score + first_pass.score) / 2
                     
         // Get ITNR bar
         const first_decline = find_first_candidate(false, process_candidates)
-        const itnr = first_decline.prev_score == 101 ? -1 : (first_decline.prev_score + first_decline.score) / 2
+        const itnr = first_decline.prev_score == 101 ? 0 : (first_decline.prev_score + first_decline.score) / 2
 
         // Set candidate's recommendation
         results.value.candidates.forEach(candidate => candidate.system_rec = candidate.score < dnp ? 'DNP' : (candidate.score > itnr ? 'ITNR' : 'RFR'))
