@@ -373,116 +373,75 @@ watchEffect(() => {
         const found_index = candidates.findIndex(candidate => candidate.passed_karat == passed)
         const score = found_index > -1 ? (i == -1 ? candidates[found_index].score : candidates[found_index].scores[i]) : default_score
         const prev_score = found_index > 0 ? (i == -1 ? candidates[found_index - 1].score : candidates[found_index - 1].scores[i]) : default_score
-        const count = found_index > 0 ? found_index : 0
+        const count = found_index > -1 ? found_index : candidates.length
         return { score, count, prev_score }
     }
+
+    const get_fit_count = (process_candidate_list:candidate[], weights:number[], weight_to_add:number, fit_memory:{[weight:number]:number}) => {
+        if(fit_memory[weight_to_add] !== undefined) return fit_memory[weight_to_add]
+
+        // Populate all the weights
+        const all_weights = [...weights.map(weight => (100 - weight_to_add) * weight / 100), weight_to_add]
+
+        // Adjust score using current weights
+        process_candidate_list.forEach(item => item.score = all_weights.reduce((pv, cv, i) => pv + cv * item.scores[i] / 100, 0))
+
+        // Get the fit count
+        const fit_count = find_first_candidate(false, process_candidate_list).count + find_first_candidate(true, process_candidate_list).count
         
-    const process = (process_candidate_list:candidate[], ret:results, at:number, weights:number[], memory:{max_fit_count:number, final_weights:number[][]}) => {
+        // Return
+        return fit_memory[weight_to_add] = fit_count
+    }
+
+    const process = (process_candidate_list:candidate[], at:number = 1, weights:number[] = [100]) => {
         const number_of_modules = process_list.value[0].modules.length
-        let fit_count_to_return:number = 0
+        if(at > 1) {
+            let max_fit_weight:null|number = null
+            const fit_memory:{[weight:number]:number} = {}
+            const cur_fit_info:{weight:number, count:number}[] = []
 
-        // Get the remaining weight
-        const remaining_weight = 100 - weights.reduce((pv, cv) => pv + cv, 0)
-        if(at == number_of_modules){
-            // Populate all the weights
-            const all_weights = [...weights, remaining_weight]
-
-            // Adjust score using current weights
-            process_candidate_list.forEach(item => item.score = item.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
-
-            // Get the fit count
-            const fit_count = find_first_candidate(false, process_candidate_list).count + find_first_candidate(true, process_candidate_list).count
-
-            // Save weights if the fit count is greater than or equal to the max count
-            if(fit_count > memory.max_fit_count){
-                memory.max_fit_count = fit_count
-                memory.final_weights = []
-            }
-            if(fit_count ==  memory.max_fit_count){
-                memory.final_weights = [...memory.final_weights, all_weights]
-            }
-
-            fit_count_to_return = fit_count
-        }
-        else {
-            // Find max fit count
-            const mem:{[weight:number]:number} = {}
             let low_weight = 0
-            let low_fit_count = (mem[low_weight] = process(process_candidate_list, ret, at + 1, [...weights, low_weight], memory))
-            let hi_weight = remaining_weight
-            let hi_fit_count = (mem[hi_weight] = process(process_candidate_list, ret, at + 1, [...weights, hi_weight], memory))
-            while(hi_weight - low_weight > 1){
+            let hi_weight = 100
+            while(hi_weight - low_weight > 2){
+                cur_fit_info.length = 0
+
                 const mod = (hi_weight - low_weight) / 3
                 const mid1_weight = Math.floor(mod + low_weight)
-                const mid1_fit_count = mem[mid1_weight] ?? (mem[mid1_weight] = process(process_candidate_list, ret, at + 1, [...weights, mid1_weight], memory))
                 const mid2_weight = Math.floor(2 * mod + low_weight)
-                const mid2_fit_count = mem[mid2_weight] ?? (mem[mid2_weight] = process(process_candidate_list, ret, at + 1, [...weights, mid2_weight], memory))
-                if(mid1_fit_count >= low_fit_count) low_weight = mid1_weight
-                else hi_weight = mid1_weight
-                if(mid2_fit_count >= hi_fit_count) hi_weight = mid2_weight
-                else low_weight = mid2_weight
-            }
-            const max_fit_count = Math.max(hi_fit_count, low_fit_count)
-            const target_fit_weight = hi_fit_count == max_fit_count ? hi_weight : low_weight
 
-            // Process weights that share the fit count if the fit count is equal to the max fit count
-            if(max_fit_count == memory.max_fit_count){
-                let i = -1
-                while(target_fit_weight + i >= 0 && target_fit_weight + i <= 100 && (mem[target_fit_weight + i] ?? (mem[target_fit_weight + i] = process(process_candidate_list, ret, at + 1, [...weights, target_fit_weight + i], memory))) >= memory.max_fit_count) i--
-                i = 1
-                while(target_fit_weight + i >= 0 && target_fit_weight + i <= 100 && target_fit_weight + i <= remaining_weight && (mem[target_fit_weight + i] ?? (mem[target_fit_weight + i] = process(process_candidate_list, ret, at + 1, [...weights, target_fit_weight + i], memory))) >= memory.max_fit_count) i++
-            }
+                cur_fit_info.push({weight: low_weight, count: get_fit_count(process_candidate_list, weights, low_weight, fit_memory)})
+                cur_fit_info.push({weight: mid1_weight, count: get_fit_count(process_candidate_list, weights, mid1_weight, fit_memory)})
+                cur_fit_info.push({weight: mid2_weight, count: get_fit_count(process_candidate_list, weights, mid2_weight, fit_memory)})
+                cur_fit_info.push({weight: hi_weight, count: get_fit_count(process_candidate_list, weights, hi_weight, fit_memory)})
+                if(max_fit_weight && !cur_fit_info.find(item => item.weight == max_fit_weight)) cur_fit_info.push({weight: max_fit_weight, count: get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory)})
 
-            fit_count_to_return = max_fit_count
-        }
+                cur_fit_info.sort((a, b) => a.weight > b.weight ? 1 : -1)
+                const max_count = cur_fit_info.reduce((pv, cv) => Math.max(pv, cv.count), 0)
+                const max_fit_index = cur_fit_info.findIndex(item => item.count == max_count)
 
-        // Final Processing
-        if(at == 1 || number_of_modules == 1){
-            // Build out candidate data
-            ret.candidates = [...candidate_list.value].map(candidate => {
-                const c:result_candidate = {
-                    id: candidate.id,
-                    name: candidate.candidate,
-                    system_rec: 'RFR',
-                    client_rec: candidate.client_rec,
-                    score: 0,
-                    scores: candidate.scores,
-                    pass_expectation: 0,
-                    passed_karat: candidate.passed_karat
-                }
-                return c
-            })
+                max_fit_weight = cur_fit_info[max_fit_index].weight
 
-            let best_score = 0
-            for(const all_weights of memory.final_weights){
-                // Adjust score
-                ret.candidates.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
-                process_candidate_list.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * all_weights[i] / 100, 0))
-                
-                // Get DNP bar
-                const first_pass = find_first_candidate(true, process_candidate_list)
-                const dnp = first_pass.prev_score == -1 ? -1 : (first_pass.prev_score + first_pass.score) / 2
-                
-                // Get ITNR bar
-                const first_decline = find_first_candidate(false, process_candidate_list)
-                const itnr = first_decline.prev_score == 101 ? -1 : (first_decline.prev_score + first_decline.score) / 2
-
-                // Get pass/decline fit score
-                set_pass_expectations(ret.candidates)
-                const pass_score = ret.candidates.reduce((pv, cv) => pv + Math.pow(cv.pass_expectation - (cv.passed_karat ? 0 : 100), 2), 0)
-
-                if(pass_score > best_score){
-                    best_score = pass_score
-                    ret.dnp = dnp
-                    ret.itnr = itnr
-                    ret.weights = all_weights
+                let low_index = max_fit_index
+                let hi_index = max_fit_index
+                while(low_index > 0 && cur_fit_info[low_index].count == max_count) low_index--
+                while(hi_index < cur_fit_info.length - 1 && cur_fit_info[hi_index].count == max_count) hi_index++
+                low_weight = cur_fit_info[low_index].weight
+                hi_weight = cur_fit_info[hi_index].weight
+                if(low_index == 0 && hi_index == cur_fit_info.length - 1){
+                    if(low_weight == max_fit_weight) hi_weight--
+                    else low_weight++
                 }
             }
+            
+            const max_fit_count = get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory)
+            const target_fit_weight = max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory) ? 50 : max_fit_count == fit_memory[100] ? 100 : max_fit_count == fit_memory[0] ? 0 : max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory) ? 50 : max_fit_weight
 
-            results.value = ret
+            console.log(fit_memory)
+            debugger
+            weights = [...weights.map(weight => (100 - target_fit_weight) * weight / 100), target_fit_weight]
         }
-        
-        return fit_count_to_return
+        if(at < number_of_modules) weights = process(process_candidate_list, at + 1, weights)
+        return weights
     }
 
     // watches: ignore
@@ -551,8 +510,41 @@ watchEffect(() => {
 
         // Process
         console.time(`Process`)
-        process(filtered_process_list, ret, 1, [], memory)
+        debugger
+        // process(filtered_process_list, ret, 1, [], memory)
+        ret.weights = process(filtered_process_list)
         console.timeEnd(`Process`)
+
+        // Build out candidate data
+        ret.candidates = [...candidate_list.value].map(candidate => {
+            const c:result_candidate = {
+                id: candidate.id,
+                name: candidate.candidate,
+                system_rec: 'RFR',
+                client_rec: candidate.client_rec,
+                score: candidate.scores.reduce((pv, cv, i) => pv + cv * ret.weights[i] / 100, 0),
+                scores: candidate.scores,
+                pass_expectation: 0,
+                passed_karat: candidate.passed_karat
+            }
+            return c
+        })
+
+        filtered_process_list.forEach(candidate => candidate.score = candidate.scores.reduce((pv, cv, i) => pv + cv * ret.weights[i] / 100, 0))
+        
+        // Get DNP bar
+        const first_pass = find_first_candidate(true, filtered_process_list)
+        const dnp = first_pass.prev_score == -1 ? -1 : (first_pass.prev_score + first_pass.score) / 2
+        
+        // Get ITNR bar
+        const first_decline = find_first_candidate(false, filtered_process_list)
+        const itnr = first_decline.prev_score == 101 ? -1 : (first_decline.prev_score + first_decline.score) / 2
+
+        // Get pass/decline fit score
+        set_pass_expectations(ret.candidates)
+        //const pass_score = ret.candidates.reduce((pv, cv) => pv + Math.pow(cv.pass_expectation - (cv.passed_karat ? 0 : 100), 2), 0)
+
+        results.value = ret
     })
 }
 
@@ -641,14 +633,12 @@ main
             div(class="center bold") ITNR Bar {{results.itnr.toFixed(2)}} --- DNP Bar {{results.dnp.toFixed(2)}}
             h1 Anomolus Candidates
             template(v-if="anomolus_candidates.length")
-                div(class="grid" style="--grid-size:3")
+                div(class="" style="--grid-size:3")
                     span(class="bold") Candidate
                     span(class="bold") Issue 
                     span(class="bold") Confidence 
                     template(v-for="candidate of anomolus_candidates")
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.name}}
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.passed_karat ? `Passed Karat but should have been declined` : `Declined at Karat but should have passed`}}
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}" class="center") {{Math.abs(2 * candidate.pass_expectation - 100)}}%
+                        div "{{candidate.name}}","{{candidate.passed_karat ? `Passed Karat but should have been declined` : `Declined at Karat but should have passed`}}",{{Math.abs(2 * candidate.pass_expectation - 100)}}%
             div(v-else class="center") There are no anomolus candidates
             h1 Candidate Results
             div(class="grid" style="--grid-size:7")
