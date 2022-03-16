@@ -377,14 +377,14 @@ watchEffect(() => {
         return { score, count, prev_score }
     }
 
-    const get_fit_count = (process_candidate_list:candidate[], weights:number[], weight_to_add:number, fit_memory:{[weight:number]:number}) => {
+    const get_fit_count = (process_candidate_list:candidate[], weights:number[], weight_to_add:number, fit_memory:{[weight:number]:number}, config:number[]) => {
         if(fit_memory[weight_to_add] !== undefined) return fit_memory[weight_to_add]
 
         // Populate all the weights
         const all_weights = [...weights.map(weight => (100 - weight_to_add) * weight / 100), weight_to_add]
 
         // Adjust score using current weights
-        process_candidate_list.forEach(item => item.score = all_weights.reduce((pv, cv, i) => pv + cv * item.scores[i] / 100, 0))
+        process_candidate_list.forEach(item => item.score = all_weights.reduce((pv, cv, i) => pv + cv * item.scores[config[i]] / 100, 0))
 
         // Get the fit count
         const fit_count = find_first_candidate(false, process_candidate_list).count + find_first_candidate(true, process_candidate_list).count
@@ -393,8 +393,9 @@ watchEffect(() => {
         return fit_memory[weight_to_add] = fit_count
     }
 
-    const process = (process_candidate_list:candidate[], at:number = 1, weights:number[] = [100]) => {
+    const process = (process_candidate_list:candidate[], config:number[], at:number = 1, weights:number[] = [100]) => {
         const number_of_modules = process_list.value[0].modules.length
+        let fit_count
         if(at > 1) {
             let max_fit_weight:null|number = null
             const fit_memory:{[weight:number]:number} = {}
@@ -409,11 +410,11 @@ watchEffect(() => {
                 const mid1_weight = Math.floor(mod + low_weight)
                 const mid2_weight = Math.floor(2 * mod + low_weight)
 
-                cur_fit_info.push({weight: low_weight, count: get_fit_count(process_candidate_list, weights, low_weight, fit_memory)})
-                cur_fit_info.push({weight: mid1_weight, count: get_fit_count(process_candidate_list, weights, mid1_weight, fit_memory)})
-                cur_fit_info.push({weight: mid2_weight, count: get_fit_count(process_candidate_list, weights, mid2_weight, fit_memory)})
-                cur_fit_info.push({weight: hi_weight, count: get_fit_count(process_candidate_list, weights, hi_weight, fit_memory)})
-                if(max_fit_weight && !cur_fit_info.find(item => item.weight == max_fit_weight)) cur_fit_info.push({weight: max_fit_weight, count: get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory)})
+                cur_fit_info.push({weight: low_weight, count: get_fit_count(process_candidate_list, weights, low_weight, fit_memory, config)})
+                cur_fit_info.push({weight: mid1_weight, count: get_fit_count(process_candidate_list, weights, mid1_weight, fit_memory, config)})
+                cur_fit_info.push({weight: mid2_weight, count: get_fit_count(process_candidate_list, weights, mid2_weight, fit_memory, config)})
+                cur_fit_info.push({weight: hi_weight, count: get_fit_count(process_candidate_list, weights, hi_weight, fit_memory, config)})
+                if(max_fit_weight && !cur_fit_info.find(item => item.weight == max_fit_weight)) cur_fit_info.push({weight: max_fit_weight, count: get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory, config)})
 
                 cur_fit_info.sort((a, b) => a.weight > b.weight ? 1 : -1)
                 const max_count = cur_fit_info.reduce((pv, cv) => Math.max(pv, cv.count), 0)
@@ -433,15 +434,14 @@ watchEffect(() => {
                 }
             }
             
-            const max_fit_count = get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory)
-            const target_fit_weight = max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory) ? 50 : max_fit_count == fit_memory[100] ? 100 : max_fit_count == fit_memory[0] ? 0 : max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory) ? 50 : max_fit_weight
+            const max_fit_count = get_fit_count(process_candidate_list, weights, max_fit_weight, fit_memory, config)
+            const target_fit_weight = max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory, config) ? 50 : max_fit_count == fit_memory[100] ? 100 : max_fit_count == fit_memory[0] ? 0 : max_fit_count == get_fit_count(process_candidate_list, weights, 50, fit_memory, config) ? 50 : max_fit_weight
 
-            console.log(fit_memory)
-            debugger
+            fit_count = max_fit_count
             weights = [...weights.map(weight => (100 - target_fit_weight) * weight / 100), target_fit_weight]
         }
-        if(at < number_of_modules) weights = process(process_candidate_list, at + 1, weights)
-        return weights
+        if(at < number_of_modules) ({ weights, fit_count } = process(process_candidate_list, config, at + 1, weights))
+        return {weights, fit_count}
     }
 
     // watches: ignore
@@ -508,10 +508,36 @@ watchEffect(() => {
             filtered_process_list = filtered_process_list.filter(candidate => candidate.scores[index] >= ret.auto_dnp[index])
         })
 
+        // Get all module configurations
+        let configs = [[]]
+        for(let i = 0; i < number_of_modules; i++){
+            const newConfigs = []
+            for(let n = 0; n < number_of_modules; n++){
+                for(const config of configs){
+                    if(!config.includes(n)) newConfigs.push([...config, n])
+                }
+            }
+            configs = newConfigs
+        }
+
         // Process
         console.time(`Process`)
-        ret.weights = process(filtered_process_list)
+        let max_fit_count = 0
+        let max_weights = []
+        let max_config = []
+        for(const config of configs){
+            const {weights, fit_count} = process(filtered_process_list, config)
+            console.log(`Config: ${config}, Fit count: ${fit_count}, Weights: ${weights}`)
+            if(fit_count > max_fit_count){
+                max_weights = weights
+                max_fit_count = fit_count
+                max_config = config
+            }
+        }
         console.timeEnd(`Process`)
+
+        // Remap weights to fit domain
+        ret.weights = max_config.map(config => max_weights[config])
 
         // Build out candidate data
         ret.candidates = [...candidate_list.value].map(candidate => {
