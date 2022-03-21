@@ -607,6 +607,17 @@ function copy_results(){
     navigator.clipboard.write(data)
 }
 
+function copy_candidates(){
+    let copy = 'Candidate,State,"V3 Rec","Rec Reviews","V3 Score","Raw Scores","Pass Expectation"\n'
+    for(const candidate of results.value.candidates){
+        copy += `"${candidate.name}",${candidate.passed_karat ? 'Passed' : 'Declined'},"${candidate.system_rec}","${candidate.client_rec}","${candidate.score.toFixed(2)}","[${candidate.scores}]","${candidate.pass_expectation}%"\n`
+    }
+    const type = 'text/plain'
+    const blob = new Blob([copy], { type })
+    let data = [new ClipboardItem({ [type]: blob })]
+    navigator.clipboard.write(data)
+}
+
 const avg_scores = computed(() => {
     const dimensions = candidate_list.value[0]?.scores.length ?? 0
     const avg_scores = []
@@ -619,6 +630,19 @@ const normalize_weight = computed(() => {
     const score_ratio = avg_scores.value.map(item => item / min_score)
     return results.value.weights.slice().map((weight, i) => weight * score_ratio[i])
 })
+
+const showAnomolusCandidates = ref(true)
+const showCandidates = ref(true)
+const showData = ref(true)
+function toggleShowAnomolusCandidates(){
+    showAnomolusCandidates.value = !showAnomolusCandidates.value
+}
+function toggleShowCandidates(){
+    showCandidates.value = !showCandidates.value
+}
+function toggleShowData(){
+    showData.value = !showData.value
+}
 </script>
 
 <template lang="pug">
@@ -666,20 +690,28 @@ main
             br
             div(class="center bold") ITNR Bar {{results.itnr.toFixed(2)}} --- DNP Bar {{results.dnp.toFixed(2)}}
             h1
+                span Data
+                button(@click="toggleShowData") {{showData ? 'Hide' : 'Show'}}
+            h1
                 span Anomolus Candidates
-                button(@click="copy_results") Copy For Spreasheet
-            template(v-if="anomolus_candidates.length")
-                div(class="grid" style="--grid-size:3")
-                    span(class="bold") Candidate
-                    span(class="bold") Issue 
-                    span(class="bold") Confidence 
-                    template(v-for="candidate of anomolus_candidates")
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.name}}
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.passed_karat ? `Should have been declined` : `Should have been brought onsite`}}
-                        span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}" class="center") {{Math.abs(2 * candidate.pass_expectation - 100)}}%
-            div(v-else class="center") There are no anomolus candidates
-            h1 Candidate Results
-            div(class="grid" style="--grid-size:7")
+                button(@click="toggleShowAnomolusCandidates") {{showAnomolusCandidates ? 'Hide' : 'Show'}}
+                button(@click="copy_results") Copy For Spreadsheet
+            template(v-if="showAnomolusCandidates")
+                template(v-if="anomolus_candidates.length")
+                    div(class="grid" style="--grid-size:3")
+                        span(class="bold") Candidate
+                        span(class="bold") Issue 
+                        span(class="bold") Confidence 
+                        template(v-for="candidate of anomolus_candidates")
+                            span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.name}}
+                            span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.passed_karat ? `Should have been declined` : `Should have been brought onsite`}}
+                            span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}" class="center") {{Math.abs(2 * candidate.pass_expectation - 100)}}%
+                div(v-else class="center") There are no anomolus candidates
+            h1
+                span Candidate Results
+                button(@click="toggleShowCandidates") {{showAnomolusCandidates ? 'Hide' : 'Show'}}
+                button(@click="copy_candidates") Copy For Spreadsheet
+            div(v-if="showCandidates" class="grid" style="--grid-size:7")
                 span(class="bold") Candidate
                 span(class="bold") State 
                 span(class="bold") V3 Rec
@@ -708,6 +740,9 @@ h1 {
     display: flex;
     width:fit-content;
     margin-inline: auto;
+}
+h1 button + button {
+    margin-left: 8px;
 }
 .bold {
     font-weight: bold;
