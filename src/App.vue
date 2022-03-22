@@ -15,6 +15,7 @@ import { computed, ref, watchEffect } from "vue"
 interface candidate {
     id: number
     passed_karat: boolean
+    recieved_offer: boolean|null
     scores: number[]
     scores_raw: number[]
     score: number
@@ -35,17 +36,20 @@ interface raw_candidate {
     kq_scaled_scores: string
     primary_question: string
     client_rec: string
-    candidacy_state:
-        'Offer accepted'|
-        'Offer outstanding'|
-        'Declined at on-site interview'|
-        'Invited on-site interview'|
-        'Declined at Karat interview'|
-        'Inactive'|
-        'Needs decision'|
-        'Declined at phone screen'|
-        'Invited to phone screen'
+    candidacy_state: candidacy_state
+        
 }
+type candidacy_state = 
+    'Offer accepted'|
+    'Offer outstanding'|
+    'Offer declined'|
+    'Declined at on-site interview'|
+    'Invited on-site interview'|
+    'Declined at Karat interview'|
+    'Inactive'|
+    'Needs decision'|
+    'Declined at phone screen'|
+    'Invited to phone screen'
 
 interface domain_list {
     content: string
@@ -78,6 +82,7 @@ interface result_candidate {
     scores: number[]
     pass_expectation: number
     passed_karat: boolean
+    recieved_offer: boolean|null
 }
 
 /****************************************************
@@ -214,6 +219,7 @@ watchEffect(() => {
             const candidate:candidate = {
                 id: ++id,
                 passed_karat: raw_candidate.candidacy_state != 'Declined at Karat interview',
+                recieved_offer: setRecievedOffer(raw_candidate.candidacy_state),
                 scores,
                 scores_raw: scores,
                 score: 0,
@@ -231,6 +237,12 @@ watchEffect(() => {
     catch(e){
         app_error.value = `Your JSON data is invalid.`
         candidate_list.value = []
+    }
+
+    function setRecievedOffer(state:candidacy_state):boolean|null{
+        if(state.startsWith('Offer')) return true
+        if(state == 'Declined at on-site interview') return false
+        return null
     }
 })
 
@@ -549,7 +561,8 @@ watchEffect(() => {
                 score: candidate.scores.reduce((pv, cv, i) => pv + cv * ret.weights[i] / 100, 0),
                 scores: candidate.scores,
                 pass_expectation: 0,
-                passed_karat: candidate.passed_karat
+                passed_karat: candidate.passed_karat,
+                recieved_offer: candidate.recieved_offer
             }
             return c
         })
@@ -643,6 +656,10 @@ function toggleShowCandidates(){
 function toggleShowData(){
     showData.value = !showData.value
 }
+function fixInfinity(n){
+    if(isNaN(n) || n == Infinity) return '-'
+    return n
+}
 </script>
 
 <template lang="pug">
@@ -692,6 +709,43 @@ main
             h1
                 span Data
                 button(@click="toggleShowData") {{showData ? 'Hide' : 'Show'}}
+            div(v-if="showData" class="grid data" style="--grid-size:5")
+                //- Header
+                span
+                span(class="bold") N
+                span(class="bold") %
+                span(class="bold") Onsite %
+                span(class="bold") O:O %
+                //- span(class="bold") C:O
+                //- ITNR
+                span(class="bold") ITNR 
+                span {{results.candidates.filter(c => c.system_rec == 'ITNR').length}}
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'ITNR').length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length).toFixed(1))}}
+                //- RFR
+                span(class="bold") RFR
+                span {{results.candidates.filter(c => c.system_rec == 'RFR').length}}
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'RFR').length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length).toFixed(1))}}
+                //- DNP
+                span(class="bold") DNP
+                span {{results.candidates.filter(c => c.system_rec == 'DNP').length}}
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'DNP').length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length).toFixed(1))}}
+                //- Total
+                span(class="bold") Total
+                span {{results.candidates.length}}
+                span 100.0%
+                span {{fixInfinity((results.candidates.filter(c => c.passed_karat).length / results.candidates.length * 100).toFixed(1))}}%
+                span {{fixInfinity((results.candidates.filter(c => c.recieved_offer).length / results.candidates.filter(c => c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                //- span {{fixInfinity((results.candidates.length / results.candidates.filter(c => c.recieved_offer).length).toFixed(1))}}
+
             h1
                 span Anomolus Candidates
                 button(@click="toggleShowAnomolusCandidates") {{showAnomolusCandidates ? 'Hide' : 'Show'}}
@@ -730,6 +784,9 @@ main
 </template>
 
 <style>
+.data span {
+    text-align: right;
+}
 h1, h2, .center {
     text-align: center;
 }
