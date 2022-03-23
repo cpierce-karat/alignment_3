@@ -407,7 +407,7 @@ watchEffect(() => {
 
     const process = (process_candidate_list:candidate[], config:number[], at:number = 1, weights:number[] = [100]) => {
         const number_of_modules = process_list.value[0].modules.length
-        let fit_count
+        let fit_count = 1
         if(at > 1) {
             let max_fit_weight:null|number = null
             const fit_memory:{[weight:number]:number} = {}
@@ -644,15 +644,7 @@ const normalize_weight = computed(() => {
     return results.value.weights.slice().map((weight, i) => weight * score_ratio[i])
 })
 
-const showAnomolusCandidates = ref(true)
-const showCandidates = ref(true)
 const showData = ref(true)
-function toggleShowAnomolusCandidates(){
-    showAnomolusCandidates.value = !showAnomolusCandidates.value
-}
-function toggleShowCandidates(){
-    showCandidates.value = !showCandidates.value
-}
 function toggleShowData(){
     showData.value = !showData.value
 }
@@ -660,9 +652,15 @@ function fixInfinity(n){
     if(isNaN(n) || n == Infinity) return '-'
     return n
 }
+// Display Mode is used to present data to a client
+const displayMode = ref(false)
+const candidateView = ref(false)
 </script>
 
 <template lang="pug">
+label(class="displayModeSwitch")
+    input(type="checkbox" v-model="displayMode")
+    span D-Mode
 main
     .fixed(ref="header")
         .error(:class="{hide:!app_error}") {{app_error ? app_error : 'There is no error'}}
@@ -694,63 +692,67 @@ main
         .modules(v-if="state == 'edit_domains'") Domain{{domains.length > 1 ? 's' : ''}}
             input(v-for="_domain, i of domains.length" v-model="domains[i]")
         .results(v-if="state == 'view_results'")
-            br
-            h1 Alignment V3 Config
-            h2(:class="alignment_confidence_class") Alignment Confidence {{Math.floor(1000 - 1000 * anomolus_candidates.length / results.candidates.length) / 10}}%
-            div(class="grid" :style="`--grid-size:${domains.length + 1}`")
-                span
-                span(v-for="domain of domains" class="bold") {{domain}}
-                span(class="bold") Weight
-                span(v-for="weight of results.weights" class="center") {{weight}}
-                span(class="bold") Auto DNP
-                span(v-for="auto_dnp of results.auto_dnp" class="center") {{auto_dnp}}
-            br
-            div(class="center bold") ITNR Bar {{results.itnr.toFixed(2)}} --- DNP Bar {{results.dnp.toFixed(2)}}
-            h1
-                span Data
-                button(@click="toggleShowData") {{showData ? 'Hide' : 'Show'}}
-            div(v-if="showData" class="grid data" style="--grid-size:5")
-                //- Header
-                span
-                span(class="bold") N
-                span(class="bold") %
-                span(class="bold") Onsite %
-                span(class="bold") O:O %
-                //- span(class="bold") C:O
-                //- ITNR
-                span(class="bold") ITNR 
-                span {{results.candidates.filter(c => c.system_rec == 'ITNR').length}}
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'ITNR').length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
-                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length).toFixed(1))}}
-                //- RFR
-                span(class="bold") RFR
-                span {{results.candidates.filter(c => c.system_rec == 'RFR').length}}
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'RFR').length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
-                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length).toFixed(1))}}
-                //- DNP
-                span(class="bold") DNP
-                span {{results.candidates.filter(c => c.system_rec == 'DNP').length}}
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'DNP').length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
-                //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length).toFixed(1))}}
-                //- Total
-                span(class="bold") Total
-                span {{results.candidates.length}}
-                span 100.0%
-                span {{fixInfinity((results.candidates.filter(c => c.passed_karat).length / results.candidates.length * 100).toFixed(1))}}%
-                span {{fixInfinity((results.candidates.filter(c => c.recieved_offer).length / results.candidates.filter(c => c.recieved_offer !== null).length * 100).toFixed(1))}}%
-                //- span {{fixInfinity((results.candidates.length / results.candidates.filter(c => c.recieved_offer).length).toFixed(1))}}
+            section
+                div(v-if="!displayMode")
+                    br
+                    h1 Alignment V3 Config
+                    h2(:class="alignment_confidence_class") Alignment Confidence {{Math.floor(1000 - 1000 * anomolus_candidates.length / results.candidates.length) / 10}}%
+                    div(class="grid" :style="`--grid-size:${domains.length + 1}`")
+                        span
+                        span(v-for="domain of domains" class="bold") {{domain}}
+                        span(class="bold") Weight
+                        span(v-for="weight of results.weights" class="center") {{weight}}
+                        span(class="bold") Auto DNP
+                        span(v-for="auto_dnp of results.auto_dnp" class="center") {{auto_dnp}}
+                    br
+                    div(class="center bold") ITNR Bar {{results.itnr.toFixed(2)}} --- DNP Bar {{results.dnp.toFixed(2)}}
+                    br
+                    br
+                h1
+                    span Funnel Metrics
+                    button(v-if="!displayMode" @click="toggleShowData") {{showData ? 'Hide' : 'Show'}}
+                div(v-if="showData" class="grid data" style="--grid-size:5")
+                    //- Header
+                    span
+                    span(class="bold") N
+                    span(class="bold") %
+                    span(class="bold") Onsite %
+                    span(class="bold") O:O %
+                    //- span(class="bold") C:O
+                    //- ITNR
+                    span(class="bold") ITNR 
+                    span {{results.candidates.filter(c => c.system_rec == 'ITNR').length}}
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'ITNR').length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                    //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'ITNR').length / results.candidates.filter(c => c.system_rec == 'ITNR' && c.recieved_offer).length).toFixed(1))}}
+                    //- RFR
+                    span(class="bold") RFR
+                    span {{results.candidates.filter(c => c.system_rec == 'RFR').length}}
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'RFR').length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                    //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'RFR').length / results.candidates.filter(c => c.system_rec == 'RFR' && c.recieved_offer).length).toFixed(1))}}
+                    //- DNP
+                    span(class="bold") DNP
+                    span {{results.candidates.filter(c => c.system_rec == 'DNP').length}}
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.passed_karat).length / results.candidates.filter(c => c.system_rec == 'DNP').length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                    //- span {{fixInfinity((results.candidates.filter(c => c.system_rec == 'DNP').length / results.candidates.filter(c => c.system_rec == 'DNP' && c.recieved_offer).length).toFixed(1))}}
+                    //- Total
+                    span(class="bold") Total
+                    span {{results.candidates.length}}
+                    span 100.0%
+                    span {{fixInfinity((results.candidates.filter(c => c.passed_karat).length / results.candidates.length * 100).toFixed(1))}}%
+                    span {{fixInfinity((results.candidates.filter(c => c.recieved_offer).length / results.candidates.filter(c => c.recieved_offer !== null).length * 100).toFixed(1))}}%
+                    //- span {{fixInfinity((results.candidates.length / results.candidates.filter(c => c.recieved_offer).length).toFixed(1))}}
 
-            h1
-                span Anomolus Candidates
-                button(@click="toggleShowAnomolusCandidates") {{showAnomolusCandidates ? 'Hide' : 'Show'}}
-                button(@click="copy_results") Copy For Spreadsheet
-            template(v-if="showAnomolusCandidates")
+            section(v-if="!candidateView")
+                h1
+                    span Anomolus Candidates
+                    button(v-if="!displayMode" @click="copy_results") Copy For Spreadsheet
+                    button(@click="candidateView = true") Switch View
                 template(v-if="anomolus_candidates.length")
                     div(class="grid" style="--grid-size:3")
                         span(class="bold") Candidate
@@ -761,29 +763,47 @@ main
                             span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}") {{candidate.passed_karat ? `Should have been declined` : `Should have been brought onsite`}}
                             span(:class="{'color-light-grey': Math.abs(2 * candidate.pass_expectation - 100) > ignore}" class="center") {{Math.abs(2 * candidate.pass_expectation - 100)}}%
                 div(v-else class="center") There are no anomolus candidates
-            h1
-                span Candidate Results
-                button(@click="toggleShowCandidates") {{showAnomolusCandidates ? 'Hide' : 'Show'}}
-                button(@click="copy_candidates") Copy For Spreadsheet
-            div(v-if="showCandidates" class="grid" style="--grid-size:7")
-                span(class="bold") Candidate
-                span(class="bold") State 
-                span(class="bold") V3 Rec
-                span(class="bold") Rec Reviews
-                span(class="bold") V3 Score
-                span(class="bold") Raw Scores 
-                span(class="bold") Pass Expectation
-                template(v-for="candidate of results.candidates")
-                    span {{candidate.name}}
-                    span {{candidate.passed_karat ? 'Passed' : 'Declined'}}
-                    span(class="center") {{candidate.system_rec}}
-                    span(class="center") {{candidate.client_rec}}
-                    span(class="center") {{candidate.score.toFixed(2)}}
-                    span {{candidate.scores}}
-                    span(class="center") {{candidate.pass_expectation}}%
+            section(v-if="candidateView")
+                h1
+                    span Candidate Results
+                    button(v-if="!displayMode" @click="copy_candidates") Copy For Spreadsheet
+                    button(@click="candidateView = false") Switch View
+                div(class="grid" :style="`--grid-size:${displayMode ? 5 : 7}`")
+                    span(class="bold") Candidate
+                    span(class="bold") State 
+                    span(v-if="!displayMode" class="bold") V3 Rec
+                    span(v-if="!displayMode" class="bold") Rec Reviews
+                    span(class="bold") V3 Score
+                    span(v-if="!displayMode" class="bold") Raw Scores 
+                    span(class="bold") Pass Expectation
+                    span(v-if="displayMode" class="bold") Rec Reviews
+                    template(v-for="candidate of results.candidates")
+                        span {{candidate.name}}
+                        span {{candidate.passed_karat ? 'Passed' : 'Declined'}}
+                        span(v-if="!displayMode" class="center") {{candidate.system_rec}}
+                        span(v-if="!displayMode" class="center") {{candidate.client_rec}}
+                        span(class="center") {{candidate.score.toFixed(2)}}
+                        span(v-if="!displayMode") {{candidate.scores}}
+                        span(class="center") {{candidate.pass_expectation}}%
+                        span(v-if="displayMode") {{candidate.client_rec}}
 </template>
 
 <style>
+.results {
+    display: flex;
+}
+span {
+    white-space: nowrap;
+}
+section {
+    margin-inline: 32px;
+}
+.displayModeSwitch {
+    position:fixed;
+    top:8px;
+    right: 8px;
+    z-index: 1;
+}
 .data span {
     text-align: right;
 }
