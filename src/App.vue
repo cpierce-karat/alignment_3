@@ -306,6 +306,12 @@ watchEffect(() => {
         if(error) error += ' - '
         error += 'Content map has created null scores'
     }
+
+    // Check if domain map is set up
+    if(candidate_list.value[0].scores_raw.length != candidate_list.value[0].scores.length){
+        if(error) error += ' - '
+        error += `Expecting ${candidate_list.value[0].scores_raw.length} domains`
+    }
     app_error.value = error
 })
 
