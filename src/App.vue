@@ -655,6 +655,16 @@ function fixInfinity(n){
 // Display Mode is used to present data to a client
 const displayMode = ref(false)
 const candidateView = ref(false)
+const massRemoveMode = ref(false)
+const massRemoveCandidates = ref('')
+const massRemove = () => {
+    const removeList = massRemoveCandidates.value.split('\n').map(c => c.trim())
+    sorted_candidate_list.value
+    .filter(c => removeList.includes(c.candidate))
+    .forEach(c => removeCandidate(c.id))
+    massRemoveCandidates.value = ''
+    massRemoveMode.value = false
+}
 </script>
 
 <template lang="pug">
@@ -681,8 +691,18 @@ main
                         select(v-model="domain.map")
                             option(v-for="n of max_modules_used" :value="n - 1") {{n}}
                 br
+                div
+                    button(v-if="!massRemoveMode" @click="massRemoveMode = true") Remove Multiple
+                    div(v-else)
+                        textarea(v-model="massRemoveCandidates")
+                        div
+                            button(@click="massRemoveMode = false" style="margin-right:8px") cancel
+                            button(@click="massRemove") Remove
+                br
                 h1 Candidates
     .body(:style="{'margin-top':header_height}")
+        div(v-if="state == 'clean_candidate_list'" class="removeCandidates")
+            button(v-if="sorted_candidate_list.some(c => c.flag)" @click="sorted_candidate_list.filter(c => c.flag).forEach(c => removeCandidate(c.id))") Remove All Flagged Candidates
         div(v-if="state == 'clean_candidate_list'" class="grid" style="--grid-size:4")
             template(v-for="candidate of sorted_candidate_list" :key="candidate.id")
                 button(@click="removeCandidate(candidate.id)") X
@@ -898,6 +918,10 @@ main {
 .controls{
     text-align: center;
     margin-bottom: 20px;
+}
+
+.removeCandidates{
+    margin-block: 16px;
 }
 
 textarea {
