@@ -505,20 +505,22 @@ watchEffect(() => {
             final_weights: []
         }
 
-        // Get Aggressive Auto DNP levels
         const number_of_modules = process_list.value[0].modules.length
-        const aggressive_auto_dnp:{index:number, level:number}[] = []
-        for(let i = 0; i < number_of_modules; i++) aggressive_auto_dnp.push({
-            index: i,
-            level: find_first_candidate(true, process_list.value, i).prev_score + 1
-        })
-
-        // Get Auto DNP levels and filter candidates
         let filtered_process_list = process_list.value.slice()
-        aggressive_auto_dnp.sort((a, b) => a.level < b.level ? -1 : 1).forEach(({index, level}) => {
-            ret.auto_dnp[index] = find_first_candidate(true, filtered_process_list, index).prev_score + 1
-            filtered_process_list = filtered_process_list.filter(candidate => candidate.scores[index] >= ret.auto_dnp[index])
-        })
+        if(!v2mode.value){
+            // Get Aggressive Auto DNP levels
+            const aggressive_auto_dnp:{index:number, level:number}[] = []
+            for(let i = 0; i < number_of_modules; i++) aggressive_auto_dnp.push({
+                index: i,
+                level: find_first_candidate(true, process_list.value, i).prev_score + 1
+            })
+
+            // Get Auto DNP levels and filter candidates
+            aggressive_auto_dnp.sort((a, b) => a.level < b.level ? -1 : 1).forEach(({index, level}) => {
+                ret.auto_dnp[index] = find_first_candidate(true, filtered_process_list, index).prev_score + 1
+                filtered_process_list = filtered_process_list.filter(candidate => candidate.scores[index] >= ret.auto_dnp[index])
+            })
+        }
 
         // Get all module configurations
         let configs = [[]]
@@ -585,6 +587,132 @@ watchEffect(() => {
     })
 }
 
+{
+    enum REC {
+        FT = 3,
+        ITNR = 2,
+        RFR = 1,
+        DNP = 0
+    }
+    const BONUS = [-25, -15, 0, 20]
+    type recIndex = 0|1|2|3
+    interface gridItem {
+        id: number
+        score: number
+        scores: number[]
+        minRec: recIndex
+        maxRec: recIndex
+        minBonusIndex: recIndex
+        maxBonusIndex: recIndex
+    }
+
+    const getScore = (score:number, bonusIndex:number) => Math.max(0, Math.min(100, score + BONUS[bonusIndex]))
+    
+    function grid_fits(grid:gridItem[]){
+        grid.sort((a, b) => a.score < b.score ? -1 : 1)
+        let minRec = 0
+        for(const item of grid){
+            if(item.minRec < minRec) return false
+            minRec = Math.max(item.minRec, minRec)
+        }
+        return true
+    }
+
+    function set_grid_bonuses(grid:gridItem[], lockPossibleBonus = false){
+        debugger
+        const recIndexes = [0, 1, 2, 3]
+        // Sort by rec then score for minBonusIndex
+        grid.sort((a, b) => a.minRec == b.minRec ? (a.score < b.score ? -1 : 1) : a.minRec < b.minRec ? -1 : 1)
+        let low = [-1, -1, -1, -1]
+        for(const item of grid){
+            // Get minBonusIndex or return a do not fit id
+            const minBonusIndex = lockPossibleBonus ? 2 : recIndexes.findIndex(i => low[item.minRec] < getScore(item.score, i)) as recIndex | -1
+            if(minBonusIndex == -1) return { does_not_fit:item.id, low:[], high:[] }
+            item.minBonusIndex = minBonusIndex
+
+            // Adjuct the cutoff table
+            low = low.map((c, i) => i <= item.minRec ? c : Math.max(c, getScore(item.score, minBonusIndex)))
+        }
+
+        // Sort grid for maxBonusIndex
+        grid.sort((a, b) => a.minRec == b.minRec ? (a.score > b.score ? -1 : 1) : a.maxRec > b.maxRec ? -1 : 1)
+        let high = [101, 101, 101, 101]
+        for(const item of grid){
+            // Get maxBonusIndes or return a do not fit id
+            const maxBonusIndex = lockPossibleBonus ? 2 : 3 - recIndexes.findIndex(i => high[3 - item.maxRec] > getScore(item.score, 3 - i)) as recIndex | 4
+            if(maxBonusIndex == 4) return { does_not_fit:item.id, low:[], high:[] }
+            item.maxBonusIndex = maxBonusIndex
+
+            // Adjuct the cutoff table
+            high = high.map((c, i) => i <= 3 - item.maxRec ? c : Math.min(c, getScore(item.score, maxBonusIndex)))
+        }
+
+        high.reverse()
+        return { does_not_fit:null, low, high }
+    }
+
+    // watches: results.candidates
+    // updates: v2results
+    let last_ignore = 0
+    watchEffect(() => {
+        if(results.value.candidates.length > 0 && ignore.value != last_ignore && v2mode.value){
+            debugger
+            last_ignore = ignore.value
+
+            // Get bar weight
+            const weight = results.value.weights
+            .map((w, i) => ({index: i, weight: w}))
+            .sort((a, b) => a.weight > b.weight ? -1 : 1)
+            .map(entry => entry.index)
+
+            // Reduce the modules to fit V2's weighting system
+            if(weight.length > 3) weight.length = 3
+            
+            let unfit = []
+            let not_fit = true
+            let bars
+            while(not_fit){
+                bars = []
+                // Build initial score grid
+                let grid:gridItem[] = results.value.candidates.filter(c => !unfit.includes(c.id)).map(c => ({
+                    id: c.id,
+                    score: 0,
+                    scores: c.scores,
+                    minRec: REC[c.system_rec],
+                    maxRec: REC[c.system_rec],
+                    minBonusIndex: 0,
+                    maxBonusIndex: 3
+                }))
+                for(const scoreIndex of weight){
+                    const atEnd = scoreIndex == weight.at(-1)
+
+                    // Set grid score
+                    grid = grid.map(item => Object.assign(item, { score: item.scores[scoreIndex] }))
+
+                    // Check grid fit
+                    if(grid_fits(grid)) not_fit = false
+
+                    // Calculate posible bonuses
+                    const lockPossibleBonus = !not_fit || atEnd
+                    const { does_not_fit, low, high } = set_grid_bonuses(grid, lockPossibleBonus)
+                    if(does_not_fit !== null){
+                        unfit.push(does_not_fit)
+                        break
+                    }
+                    else bars.push({ low, high })
+
+                    // Adjust grid for next weight
+                    grid = grid.map(item => Object.assign(item, { minRec: item.minBonusIndex, maxRec: item.maxBonusIndex }))
+
+                    // If fit or last grid exit loop
+                    if(lockPossibleBonus) break
+                }
+            }
+            console.dir(bars)
+        }
+    })
+}
+
 /*****************************************
  **************** METHODS ****************
  ****************************************/
@@ -600,13 +728,16 @@ function removeContent(i){
     domain_list.value.splice(i, 1)
 }
 
-function next(){
+const v2mode = ref(false)
+function next(v2flag = false){
     const next_state_map = {
         upload: 'clean_candidate_list',
         clean_candidate_list: 'edit_domains',
         edit_domains: 'view_results'
     }
-    state.value = next_state_map[state.value]
+    v2mode.value = v2flag
+    if(v2mode.value) state.value = 'view_alignment'
+    else state.value = next_state_map[state.value]
 }
 
 function copy_results(){
@@ -665,7 +796,9 @@ main
     .fixed(ref="header")
         .error(:class="{hide:!app_error}") {{app_error ? app_error : 'There is no error'}}
         .controls
-            button(v-if="state != 'view_results'" @click="next" :disabled="next_button_disabled") Next
+            button(v-if="state != 'view_results' && state != 'clean_candidate_list'" @click="next()" :disabled="next_button_disabled") Next
+            button(v-if="state == 'clean_candidate_list'" @click="next()") v3 Results
+            button(v-if="state == 'clean_candidate_list'" @click="next(true)") v2.0.1 Results
             div(v-if="state == 'view_results'") Ignore anomolies greater than
                 input(type="range" min="49" max="100" v-model="ignore")
                 span {{ignore}} 
@@ -691,7 +824,7 @@ main
                 span {{candidate.scores}}
         .modules(v-if="state == 'edit_domains'") Domain{{domains.length > 1 ? 's' : ''}}
             input(v-for="_domain, i of domains.length" v-model="domains[i]")
-        .results(v-if="state == 'view_results'")
+        .results(v-if="state == 'view_results' || state == 'view_alignment'")
             section
                 div(v-if="!displayMode")
                     br
@@ -818,7 +951,7 @@ h1 {
     width:fit-content;
     margin-inline: auto;
 }
-h1 button + button {
+button + button {
     margin-left: 8px;
 }
 .bold {
